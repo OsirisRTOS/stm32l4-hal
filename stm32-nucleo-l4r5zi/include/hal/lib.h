@@ -1,3 +1,6 @@
+#ifndef LIB_H
+#define LIB_H
 
+#include <stdint.h>
 
-void this_should_be_included(void);
+#endif // LIB_H
