@@ -10,3 +10,6 @@ pub extern "C" fn default_hndlr() {
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
+
+#[no_mangle]
+pub extern "C" fn hw_init() {}

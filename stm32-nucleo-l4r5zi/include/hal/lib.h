@@ -1,6 +1,13 @@
-#ifndef LIB_H
-#define LIB_H
+#ifndef HAL_H
+#define HAL_H
 
+#include <stdarg.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 
-#endif // LIB_H
+void default_hndlr(void);
+
+void hw_init(void);
+
+#endif /* HAL_H */
