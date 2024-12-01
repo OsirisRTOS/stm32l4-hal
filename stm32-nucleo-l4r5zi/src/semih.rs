@@ -3,7 +3,7 @@ use core::ffi::CStr;
 
 pub fn write(msg: &CStr) -> u32 {
     let reason = 0x04;
-    let mut result: u32 = 0;
+    let mut _result: u32 = 0;
 
     unsafe {
         asm!(
@@ -13,9 +13,9 @@ pub fn write(msg: &CStr) -> u32 {
             "mov {2}, r0",
             in(reg) reason,
             in(reg) msg.as_ptr(),
-            out(reg) result
+            out(reg) _result
         );
     }
 
-    return 0;
+    return _result;
 }
