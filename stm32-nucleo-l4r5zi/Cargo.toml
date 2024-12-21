@@ -9,7 +9,7 @@ crate-type = ["rlib", "staticlib"]
 cbindgen = "0.18.0"
 
 [dependencies]
-cortex-m = { path = "../../cortex-m", features = ["cm7-r0p1"] }
+cortex-m = { path = "../../cortex-m", features = ["cm7-r0p1", "multi-core"] }
 
 [features]
 panic-semih = ["cortex-m/panic-semih"]
