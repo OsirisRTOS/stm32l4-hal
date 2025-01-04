@@ -1,8 +1,10 @@
+use core::arch::asm;
 ///preliminary version, untested code
 
-use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+use core::sync::atomic::{fence, AtomicU32, AtomicU8, Ordering};
 use core::marker::{Copy, PhantomData};
 use core::ops::{Add};
+use ::{cstr, hal_semih_write};
 /*==============CONSTS========*/
 const GPIOA_BASE:u32 = 0x4800_0000;
 const GPIOB_BASE:u32 = 0x4800_0400;
@@ -114,11 +116,11 @@ pub enum AlternateFunction {
 }
 
 /// Available GPIO Modes
-struct Input;
-struct Output;
-struct Alternate;
-struct Analog;
-struct Undefined;
+pub struct Input;
+pub struct Output;
+pub struct Alternate;
+pub struct Analog;
+pub struct Undefined;
 
 /// A GPIO pin with ownership tracking.
 pub struct GPIOPin<Mode> {
@@ -396,8 +398,11 @@ impl <Mode: OutputConvertible> IntoOutput<GPIOPin<Output>,GPIOPin<Mode>> for GPI
         let modepattern = 0b0101_0101_0101_0101_0101_0101_0101_0101;
         let res = atomic.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |value| {
             let cleared = value&(!target);
-            Some(cleared |(modepattern&target))
+            let new = cleared |(modepattern&target);
+            Some(new)
         });
+        unsafe { asm!("dsb"); }
+        let value = atomic.load(Ordering::Acquire);
         match res {
             Ok(_) => {Ok(GPIOPin::<Output> {
                 pin: self.pin,
@@ -422,6 +427,7 @@ impl <Mode: AnalogConvertible> IntoAnalog<GPIOPin<Analog>,GPIOPin<Mode>> for GPI
             let cleared = value&(!target);
             Some(cleared |(modepattern&target))
         });
+
         match res {
             Ok(_) => {Ok(GPIOPin::<Analog> {
                 pin: self.pin,
