@@ -2,6 +2,7 @@
 
 pub mod macros;
 pub mod semih;
+pub mod gpio;
 
 #[no_mangle]
 pub extern "C" fn default_hndlr() {
