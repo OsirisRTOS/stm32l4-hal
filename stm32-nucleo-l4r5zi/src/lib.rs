@@ -3,6 +3,8 @@
 pub mod macros;
 pub mod semih;
 
+pub extern crate cortex_m as common;
+
 #[no_mangle]
 pub extern "C" fn default_hndlr() {
     loop {}
@@ -18,11 +20,6 @@ pub extern "C" fn hal_hw_init() {}
  * Postconditions: none
  */
 #[no_mangle]
-pub extern "C" fn hal_semih_write(msg: *const i8) -> u32 {
-    semih::write(unsafe { core::ffi::CStr::from_ptr(msg) })
-}
-
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+pub extern "C" fn hal_semih_write_debug(msg: *const i8) {
+    cortex_m::semih::hio::write_debug(unsafe { core::ffi::CStr::from_ptr(msg) });
 }
