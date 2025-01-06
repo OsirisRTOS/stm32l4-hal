@@ -1,5 +1,4 @@
-use core::arch::asm;
-///preliminary version, untested code
+///This is the GPIO API for direct interaction with the GPIO Hardware controls. All Operations within this API are executed atomically. The same peripheral mus never be used by more than one instance
 
 use core::sync::atomic::{fence, AtomicU32, AtomicU8, Ordering};
 use core::marker::{Copy, PhantomData};
@@ -74,12 +73,21 @@ pub enum Pin {
     PIN15 = 15,
 }
 
+/// GPIO output configuration type
+///
+/// Defines the output drive mode for GPIO pins:
+/// * `PushPull` - Pin actively drives both high and low states
+/// * `OpenDrain` - Pin actively drives low state only and requires external pull-up for high state
 #[derive(Copy, Clone)]
 pub enum OutputType {
     PushPull = 0,
     OpenDrain = 1,
 }
 
+/// GPIO output speed configuration
+///
+/// Configures the slew rate and drive strength for GPIO pins on STM32L4R5:
+/// For speeds refer to the datasheet Section 6.3.17 (https://www.st.com/resource/en/datasheet/stm32l4r5vi.pdf)
 #[derive(Copy, Clone)]
 pub enum Speed {
     Low = 0,
@@ -88,6 +96,13 @@ pub enum Speed {
     VeryHigh = 3,
 }
 
+
+/// Internal pull resistor configuration for GPIO pins
+///
+/// Controls the internal pull-up/pull-down resistors:
+/// * `Disabled` - No internal pull resistor (floating input)
+/// * `PullUp` - Enables internal pull-up resistor (~40kΩ)
+/// * `PullDown` - Enables internal pull-down resistor (~40kΩ)
 #[derive(Copy, Clone)]
 pub enum PushPullMode {
     Disabled = 0,
@@ -95,6 +110,7 @@ pub enum PushPullMode {
     PullDown = 2,
 }
 
+///Alternate function values
 #[derive(Copy, Clone)]
 pub enum AlternateFunction {
     AF0 = 0,
@@ -116,11 +132,11 @@ pub enum AlternateFunction {
 }
 
 /// Available GPIO Modes
-pub struct Input;
-pub struct Output;
-pub struct Alternate;
-pub struct Analog;
-pub struct Undefined;
+struct Input;
+struct Output;
+struct Alternate;
+struct Analog;
+struct Undefined;
 
 /// A GPIO pin with ownership tracking.
 pub struct GPIOPin<Mode> {
@@ -136,6 +152,7 @@ trait OutputConvertible {}
 trait AlternateConvertible {}
 trait AnalogConvertible {}
 trait Configured {}
+
 
 pub trait IntoInput<Success,Failure> {
     fn into_input(self) -> Result<Success,Failure>;
@@ -195,6 +212,7 @@ impl <Mode> GPIOPin<Mode> {
         }
     }
 
+    ///Releases the GPIO peripheral
     pub fn release(self) {
         let idx = 2 * self.port as usize;
         let idx = if (self.pin as usize) < 8 {
@@ -212,7 +230,10 @@ impl <Mode> GPIOPin<Mode> {
     }
 }
 
+
 impl <Mode: Configured> GPIOPin<Mode> {
+
+    ///Set the pin's Outputtype
     pub fn set_outputtype(&mut self,r#type:OutputType) {
         let target = 1<<self.pin as usize;
         let baseaddress = self.get_baseaddress().add(OTYPER_OFFSET);
@@ -230,6 +251,8 @@ impl <Mode: Configured> GPIOPin<Mode> {
         }
     }
 
+
+    ///Set the Pins Outputspeed
     pub fn set_speed(&mut self,speed:Speed) {
         let target = 11<<2*self.pin as usize;
         let speedpattern = match speed {
@@ -251,6 +274,7 @@ impl <Mode: Configured> GPIOPin<Mode> {
         }).expect("UNREACHABLE");
     }
 
+    ///Configure the pins Push/Pull resistors
     pub fn set_push_pull(&mut self,pupd:PushPullMode) {
         let target = 11<<2*self.pin as usize;
         let speedpattern = match pupd {
@@ -271,6 +295,44 @@ impl <Mode: Configured> GPIOPin<Mode> {
         }).expect("UNREACHABLE");
     }
 
+    ///Sets the Pin to 1
+    pub fn set_pin(&mut self) {
+        let baseaddress = self.get_baseaddress().add(BSRR_OFFSET);
+        let ptr: *mut u32 = baseaddress as *mut u32;
+        let target = 1 << self.pin as usize;
+        ///SAFETY:
+        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        unsafe { ptr.write(target); }
+    }
+
+    ///Sets the Pin to 0
+    pub fn reset_pin(&mut self) {
+        let baseaddress = self.get_baseaddress().add(BSRR_OFFSET);
+        let ptr: *mut u32 = baseaddress as *mut u32;
+        let target = 1 << (self.pin as usize +16);
+        ///SAFETY:
+        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        unsafe { ptr.write_volatile(target); }
+    }
+
+    pub fn read_state(&self) -> bool {
+        let baseaddress = self.get_baseaddress().add(IDR_OFFSET);
+        let ptr: *mut u32 = baseaddress as *mut u32;
+        let target = 1 << (self.pin as usize +16);
+        ///SAFETY:
+        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        let idr:u32 = unsafe { ptr.read_volatile() };
+        if (idr&target)==0 {
+            false
+        } else {
+            true
+        }
+    }
+}
+
+impl GPIOPin<Alternate> {
+
+    ///Set the alternate function
     pub fn set_alternate_function(&mut self,af:AlternateFunction) {
         let target = if (self.pin as usize) < 8 {
             1111 << 4 * self.pin as usize
@@ -311,41 +373,10 @@ impl <Mode: Configured> GPIOPin<Mode> {
             Some(cleared | (target & speedpattern))
         }).expect("UNREACHABLE");
     }
-
-    pub fn set_pin(&mut self) {
-        let baseaddress = self.get_baseaddress().add(BSRR_OFFSET);
-        let ptr: *mut u32 = baseaddress as *mut u32;
-        let target = 1 << self.pin as usize;
-        ///SAFETY:
-        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
-        unsafe { ptr.write(target); }
-    }
-
-    pub fn reset_pin(&mut self) {
-        let baseaddress = self.get_baseaddress().add(BSRR_OFFSET);
-        let ptr: *mut u32 = baseaddress as *mut u32;
-        let target = 1 << (self.pin as usize +16);
-        ///SAFETY:
-        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
-        unsafe { ptr.write_volatile(target); }
-    }
-
-    pub fn read_state(&self) -> bool {
-        let baseaddress = self.get_baseaddress().add(IDR_OFFSET);
-        let ptr: *mut u32 = baseaddress as *mut u32;
-        let target = 1 << (self.pin as usize +16);
-        ///SAFETY:
-        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
-        let idr:u32 = unsafe { ptr.read_volatile() };
-        if (idr&target)==0 {
-            false
-        } else {
-            true
-        }
-    }
 }
 
 impl GPIOPin<Undefined> {
+    ///Acquires the specified pin and prevents other parts from acquiring the same pin
     pub fn take(port:Port,pin:Pin) -> GPIOPin<Undefined> {
         let idx = 2*port as usize;
         let idx = if (pin as usize) < 8 {
@@ -366,6 +397,7 @@ impl GPIOPin<Undefined> {
 
 
 impl <Mode: InputConvertible> IntoInput<GPIOPin<Input>, GPIOPin<Mode>> for GPIOPin<Mode> {
+    ///Set a pin to Input Mode
     fn into_input(self) -> Result<GPIOPin<Input>,GPIOPin<Mode>> {
         let baseaddress = self.get_baseaddress();
         let ptr: *mut u32 = baseaddress as *mut u32;
@@ -388,6 +420,7 @@ impl <Mode: InputConvertible> IntoInput<GPIOPin<Input>, GPIOPin<Mode>> for GPIOP
 }
 
 impl <Mode: OutputConvertible> IntoOutput<GPIOPin<Output>,GPIOPin<Mode>> for GPIOPin<Mode> {
+    ///Set a pin to Output Mode
     fn into_output(self) -> Result<GPIOPin<Output>,GPIOPin<Mode>> {
         let baseaddress = self.get_baseaddress();
         let ptr: *mut u32 = baseaddress as *mut u32;
@@ -412,6 +445,7 @@ impl <Mode: OutputConvertible> IntoOutput<GPIOPin<Output>,GPIOPin<Mode>> for GPI
 }
 
 impl <Mode: AnalogConvertible> IntoAnalog<GPIOPin<Analog>,GPIOPin<Mode>> for GPIOPin<Mode> {
+    ///Set a pin to Analog Mode
     fn into_analog(self) -> Result<GPIOPin<Analog>, GPIOPin<Mode>> {
         let baseaddress = self.get_baseaddress();
         let ptr: *mut u32 = baseaddress as *mut u32;
@@ -437,6 +471,7 @@ impl <Mode: AnalogConvertible> IntoAnalog<GPIOPin<Analog>,GPIOPin<Mode>> for GPI
 }
 
 impl <Mode: AlternateConvertible> IntoAlternate<GPIOPin<Alternate>,GPIOPin<Mode>> for GPIOPin<Mode> {
+    ///Set a pin to Alternate Function Mode
     fn into_alternate(self) -> Result<GPIOPin<Alternate>, GPIOPin<Mode>> {
         let baseaddress = self.get_baseaddress();
         let ptr: *mut u32 = baseaddress as *mut u32;
