@@ -185,13 +185,13 @@ impl <Mode> GPIOPin<Mode> {
         match self.port {
             Port::GPIOA => { GPIOA_BASE }
             Port::GPIOB => { GPIOB_BASE }
-            Port::GPIOC => { GPIOA_BASE }
-            Port::GPIOD => { GPIOA_BASE }
-            Port::GPIOE => { GPIOA_BASE }
-            Port::GPIOF => { GPIOA_BASE }
-            Port::GPIOG => { GPIOA_BASE }
-            Port::GPIOH => { GPIOA_BASE }
-            Port::GPIOI => { GPIOA_BASE }
+            Port::GPIOC => { GPIOC_BASE }
+            Port::GPIOD => { GPIOD_BASE }
+            Port::GPIOE => { GPIOE_BASE }
+            Port::GPIOF => { GPIOF_BASE }
+            Port::GPIOG => { GPIOG_BASE }
+            Port::GPIOH => { GPIOH_BASE }
+            Port::GPIOI => { GPIOI_BASE }
         }
     }
 
@@ -398,11 +398,8 @@ impl <Mode: OutputConvertible> IntoOutput<GPIOPin<Output>,GPIOPin<Mode>> for GPI
         let modepattern = 0b0101_0101_0101_0101_0101_0101_0101_0101;
         let res = atomic.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |value| {
             let cleared = value&(!target);
-            let new = cleared |(modepattern&target);
-            Some(new)
+            Some(cleared |(modepattern&target))
         });
-        unsafe { asm!("dsb"); }
-        let value = atomic.load(Ordering::Acquire);
         match res {
             Ok(_) => {Ok(GPIOPin::<Output> {
                 pin: self.pin,
