@@ -198,7 +198,7 @@ impl Configured for Analog {}
 
 
 impl <Mode> GPIOPin<Mode> {
-    fn get_baseaddress(&self) -> u32 {
+    fn get_base_address(&self) -> u32 {
         match self.port {
             Port::GPIOA => { GPIOA_BASE }
             Port::GPIOB => { GPIOB_BASE }
@@ -236,8 +236,8 @@ impl <Mode: Configured> GPIOPin<Mode> {
     ///Set the pin's Outputtype
     pub fn set_outputtype(&mut self,r#type:OutputType) {
         let target = 1<<self.pin as usize;
-        let baseaddress = self.get_baseaddress().add(OTYPER_OFFSET);
-        let ptr: *mut u32 = baseaddress as *mut u32;
+        let base_address = self.get_base_address().add(OTYPER_OFFSET);
+        let ptr: *mut u32 = base_address as *mut u32;
         ///SAFETY:
         /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
@@ -261,8 +261,8 @@ impl <Mode: Configured> GPIOPin<Mode> {
             Speed::High => {0b1010_1010_1010_1010_1010_1010_1010_1010_}
             Speed::VeryHigh => {0b1111_1111_1111_1111_1111_1111_1111_1111_}
         };
-        let baseaddress = self.get_baseaddress().add(OSPEEDR_OFFSET);
-        let ptr: *mut u32 = baseaddress as *mut u32;
+        let base_address = self.get_base_address().add(OSPEEDR_OFFSET);
+        let ptr: *mut u32 = base_address as *mut u32;
         ///SAFETY:
         /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
@@ -282,8 +282,8 @@ impl <Mode: Configured> GPIOPin<Mode> {
             PushPullMode::PullUp => {0b0101_0101_0101_0101_0101_0101_0101_0101}
             PushPullMode::PullDown => {0b1010_1010_1010_1010_1010_1010_1010_1010_}
         };
-        let baseaddress = self.get_baseaddress().add(PUPDR_OFFSET);
-        let ptr: *mut u32 = baseaddress as *mut u32;
+        let base_address = self.get_base_address().add(PUPDR_OFFSET);
+        let ptr: *mut u32 = base_address as *mut u32;
         ///SAFETY:
         /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
@@ -297,8 +297,8 @@ impl <Mode: Configured> GPIOPin<Mode> {
 
     ///Sets the Pin to 1
     pub fn set_pin(&mut self) {
-        let baseaddress = self.get_baseaddress().add(BSRR_OFFSET);
-        let ptr: *mut u32 = baseaddress as *mut u32;
+        let base_address = self.get_base_address().add(BSRR_OFFSET);
+        let ptr: *mut u32 = base_address as *mut u32;
         let target = 1 << self.pin as usize;
         ///SAFETY:
         /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
@@ -307,8 +307,8 @@ impl <Mode: Configured> GPIOPin<Mode> {
 
     ///Sets the Pin to 0
     pub fn reset_pin(&mut self) {
-        let baseaddress = self.get_baseaddress().add(BSRR_OFFSET);
-        let ptr: *mut u32 = baseaddress as *mut u32;
+        let base_address = self.get_base_address().add(BSRR_OFFSET);
+        let ptr: *mut u32 = base_address as *mut u32;
         let target = 1 << (self.pin as usize +16);
         ///SAFETY:
         /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
@@ -316,8 +316,8 @@ impl <Mode: Configured> GPIOPin<Mode> {
     }
 
     pub fn read_state(&self) -> bool {
-        let baseaddress = self.get_baseaddress().add(IDR_OFFSET);
-        let ptr: *mut u32 = baseaddress as *mut u32;
+        let base_address = self.get_base_address().add(IDR_OFFSET);
+        let ptr: *mut u32 = base_address as *mut u32;
         let target = 1 << (self.pin as usize +16);
         ///SAFETY:
         /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
@@ -357,12 +357,12 @@ impl GPIOPin<Alternate> {
             AlternateFunction::AF14 => { 0b0000_0000_0000_0000_0000_0000_0000_0000 }
             AlternateFunction::AF15 => { 0b0000_0000_0000_0000_0000_0000_0000_0000 }
         };
-        let baseaddress: u32 = if (self.pin as usize) < 8 {
-            self.get_baseaddress().add(AFRL_OFFSET)
+        let base_address: u32 = if (self.pin as usize) < 8 {
+            self.get_base_address().add(AFRL_OFFSET)
         } else {
-            self.get_baseaddress().add(AFRL_OFFSET)
+            self.get_base_address().add(AFRL_OFFSET)
         };
-        let ptr: *mut u32 = baseaddress as *mut u32;
+        let ptr: *mut u32 = base_address as *mut u32;
         ///SAFETY:
         /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
@@ -399,8 +399,8 @@ impl GPIOPin<Undefined> {
 impl <Mode: InputConvertible> IntoInput<GPIOPin<Input>, GPIOPin<Mode>> for GPIOPin<Mode> {
     ///Set a pin to Input Mode
     fn into_input(self) -> Result<GPIOPin<Input>,GPIOPin<Mode>> {
-        let baseaddress = self.get_baseaddress();
-        let ptr: *mut u32 = baseaddress as *mut u32;
+        let base_address = self.get_base_address();
+        let ptr: *mut u32 = base_address as *mut u32;
         ///SAFETY:
         /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
@@ -422,8 +422,8 @@ impl <Mode: InputConvertible> IntoInput<GPIOPin<Input>, GPIOPin<Mode>> for GPIOP
 impl <Mode: OutputConvertible> IntoOutput<GPIOPin<Output>,GPIOPin<Mode>> for GPIOPin<Mode> {
     ///Set a pin to Output Mode
     fn into_output(self) -> Result<GPIOPin<Output>,GPIOPin<Mode>> {
-        let baseaddress = self.get_baseaddress();
-        let ptr: *mut u32 = baseaddress as *mut u32;
+        let base_address = self.get_base_address();
+        let ptr: *mut u32 = base_address as *mut u32;
         ///SAFETY:
         /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
@@ -447,8 +447,8 @@ impl <Mode: OutputConvertible> IntoOutput<GPIOPin<Output>,GPIOPin<Mode>> for GPI
 impl <Mode: AnalogConvertible> IntoAnalog<GPIOPin<Analog>,GPIOPin<Mode>> for GPIOPin<Mode> {
     ///Set a pin to Analog Mode
     fn into_analog(self) -> Result<GPIOPin<Analog>, GPIOPin<Mode>> {
-        let baseaddress = self.get_baseaddress();
-        let ptr: *mut u32 = baseaddress as *mut u32;
+        let base_address = self.get_base_address();
+        let ptr: *mut u32 = base_address as *mut u32;
         ///SAFETY:
         /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
@@ -473,8 +473,8 @@ impl <Mode: AnalogConvertible> IntoAnalog<GPIOPin<Analog>,GPIOPin<Mode>> for GPI
 impl <Mode: AlternateConvertible> IntoAlternate<GPIOPin<Alternate>,GPIOPin<Mode>> for GPIOPin<Mode> {
     ///Set a pin to Alternate Function Mode
     fn into_alternate(self) -> Result<GPIOPin<Alternate>, GPIOPin<Mode>> {
-        let baseaddress = self.get_baseaddress();
-        let ptr: *mut u32 = baseaddress as *mut u32;
+        let base_address = self.get_base_address();
+        let ptr: *mut u32 = base_address as *mut u32;
         ///SAFETY:
         /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
