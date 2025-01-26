@@ -3,6 +3,7 @@
 pub mod macros;
 pub mod semih;
 pub mod gpio;
+mod uart;
 
 pub extern crate cortex_m as common;
 
