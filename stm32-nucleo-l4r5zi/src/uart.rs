@@ -1,5 +1,12 @@
+use core::cmp::PartialEq;
 use core::marker::PhantomData;
-use crate::gpio::{AlternateFunction, GPIOPin};
+use core::ops::Add;
+use crate::gpio::{Alternate, AlternateFunction, GPIOPin, IntoAlternate, Pin, Port, Undefined};
+use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+
+
+const RCC_BASE:u32 = 0x4002_1000;
+const APB2ENR_OFFSET:u32 = 0x60;
 
 // Combined state enum - sealed to prevent external implementations
 mod sealed {
@@ -33,44 +40,43 @@ impl State for IrDA {}
 impl State for RS485 {}
 
 // UART instance features
-pub trait UartFeatures {
-    const SUPPORTS_SYNC: bool;
-    const SUPPORTS_SMARTCARD: bool;
-    const SUPPORTS_IRDA: bool;
-    const SUPPORTS_RS485: bool;
-    const SUPPORTS_SINGLE_WIRE: bool;
-    const MAX_BAUD: u32;
-    const HAS_FIFO: bool;
+pub trait UartDevice {
+    const MAX_BAUD:u32 = 115200;
+    fn get_tx_fn(port:Port,pin:Pin) -> Result<AlternateFunction,UartError>;
+    fn get_rx_fn(port:Port,pin:Pin) -> Result<AlternateFunction,UartError>;
+    fn lock() -> Result<u8,u8>;
+    fn unlock();
+    fn enable_clock();
 }
 
 // Define specific UART instances
+static TAKEN:AtomicU8 = AtomicU8::new(0);
 pub struct Uart1;
+
 pub struct Uart2;
+
 pub struct Uart3;
+
 pub struct Uart4;
+
 pub struct Uart5;
+
 pub struct Lpuart1;
+
 
 trait SupportsSync{}
 trait SupportsSmartCard{}
 trait SupportsIrDA{}
 trait SupportsRS485{}
 trait SupportsSingleWire{}
-trait HasFifo{}
-trait MaxBaud{
-    const BAUD: u32;
-}
 
-// Implement features for each UART instance
+
     impl SupportsSync for Uart1{}
     impl SupportsSmartCard for Uart1{}
     impl SupportsIrDA for Uart1{}
     impl SupportsRS485 for Uart1{}
     impl SupportsSingleWire for Uart1{}
-    impl HasFifo for Uart1{}
-    impl MaxBaud for Uart1{
-        const BAUD: u32 = 5000000;
-    }
+
 
 
 // Basic configuration common to all modes
@@ -82,6 +88,7 @@ pub struct Config {
     pub oversampling: Oversampling,
     pub clock_source: ClockSource,
     pub hardware_flow_control: bool,
+    pub fifo_enable: bool,
     pub dma_config: Option<DmaConfig>,
 }
 
@@ -120,6 +127,8 @@ pub enum StopBits {
     OneAndHalf,
     Two,
 }
+
+
 
 // Clock source selection
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -186,7 +195,7 @@ pub enum ClockPhase {
     SecondEdge,
 }
 
-pub struct Uart<Instance: UartFeatures, S: State> {
+pub struct Uart<Instance: UartDevice, S: State> {
     tx: GPIOPin<AlternateFunction>,
     rx: Option<GPIOPin<AlternateFunction>>,
     _instance: PhantomData<Instance>,
@@ -195,6 +204,7 @@ pub struct Uart<Instance: UartFeatures, S: State> {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum UartError {
+    DeviceUnavailable,
     ParityError,
     FramingError,
     NoiseError,
@@ -215,10 +225,58 @@ pub enum UartError {
 }
 
 
-impl<Instance: UartFeatures> Uart<Instance, Disabled> {
-    pub fn new<Mode1, Mode2>(tx: GPIOPin<Mode1>, rx: GPIOPin<Mode2>, config: Config) -> Result<Self, UartError> {
-        assert!(config.baud <= Instance::MAX_BAUD);
-        unimplemented!()
+impl<Instance: UartDevice> Uart<Instance, Disabled> {
+    pub fn new(tx_port:Port, tx_pin:Pin, rx_port:Option<Port>,rx_pin:Option<Pin>, config: Config) -> Result<Self, UartError> {
+        if config.baud > Instance::MAX_BAUD {
+            return Err(UartError::BaudNotSupported);
+        }
+        if rx_port.is_some()!=rx_pin.is_some() {
+            return Err(UartError::PinConfigError);
+        }
+        let tx = match GPIOPin::take(tx_port, tx_pin) {
+            Ok(tx) => tx,
+            Err(_) => return Err(UartError::PinConfigError),
+        };
+        let mut tx = match tx.into_alternate() {
+            Ok(pin) => {pin}
+            Err(pin) => {
+                pin.release();
+                return Err(UartError::PinConfigError);
+            }
+        };
+        let rx = match rx_port.is_some() {
+            true => {
+                let rx = match GPIOPin::take(tx_port, tx_pin) {
+                    Ok(rx) => rx,
+                    Err(_) => return Err(UartError::PinConfigError),
+                };
+                Some(match rx.into_alternate() {
+                    Ok(pin) => {pin}
+                    Err(pin) => {
+                        pin.release();
+                        tx.release();
+                        return Err(UartError::PinConfigError);
+                    }
+                })
+            }
+            false => {None}
+        };
+        let tx_fn = Instance::get_tx_fn(tx_port, tx_pin)?;
+        let rx_fn = match rx.is_some() {
+            true => {Some(Instance::get_rx_fn(rx_port.unwrap(), rx_pin)?)}
+            false => {None}
+        };
+        if Instance::lock().is_err() {
+            tx.release();
+            if (rx.is_some() { rx.unwrap().release();}
+            return Err(UartError::DeviceUnavailable);
+        }
+        tx.set_alternate_function(tx_fn);
+        if let Some(mut rx) = rx {
+            rx.set_alternate_function(rx_fn.unwrap());
+        }
+        Instance::enable_clock();
+        unimplemented!();
     }
 
     pub fn enable_async(self) -> Result<Uart<Instance, Asynchronous>, UartError> {
@@ -234,7 +292,67 @@ impl<Instance: UartFeatures> Uart<Instance, Disabled> {
     }
 }
 
-impl<Instance:UartFeatures,State> Uart<Instance,State> {
+
+impl UartDevice for Uart1 {
+    fn get_tx_fn(port:Port,pin:Pin) -> Result<AlternateFunction,UartError> {
+        if port==Port::GPIOA&&pin==Pin::PIN9 {
+            Ok(AlternateFunction::AF7)
+        } else if port==Port::GPIOB&&pin==Pin::PIN6 {
+            Ok(AlternateFunction::AF7)
+        } else {
+            Err(UartError::PinConfigError)
+        }
+    }
+
+    fn get_rx_fn(port: Port, pin: Pin) -> Result<AlternateFunction, UartError> {
+        if port==Port::GPIOA&&pin==Pin::PIN10 {
+            Ok(AlternateFunction::AF7)
+        } else if port==Port::GPIOB&&pin==Pin::PIN7 {
+            Ok(AlternateFunction::AF7)
+        } else {
+            Err(UartError::PinConfigError)
+        }
+    }
+
+    fn lock() -> Result<u8,u8> {
+        let mask = 0x01;
+        TAKEN.fetch_update(
+            Ordering::SeqCst,
+            Ordering::Relaxed,
+            |x| {
+                if x&mask {
+                    None
+                } else {
+                    Some(x|mask)
+                }
+            }
+        )
+    }
+
+    fn unlock() {
+        let mask = 0xFE;
+        let res = TAKEN.fetch_update(
+            Ordering::SeqCst,
+            Ordering::Relaxed,
+            |x| {
+                Some(x&mask)
+            }
+        );
+    }
+
+    fn enable_clock() {
+        let mask = 0b0000_0000_0000_0000_0100_0000_0000_0000;
+        let ptr:*mut u32 = RCC_BASE.add(APB2ENR_OFFSET) as *mut u32;
+        ///SAFETY:
+        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
+        ///SAFETY
+        /// This Result is only error if the closure returns None, which can't happen
+        atomic.fetch_or(mask, Ordering::SeqCst);
+    }
+}
+
+impl<Instance: UartDevice,State> Uart<Instance,State> {
     pub fn transmit(&mut self, data: &[u8]) -> Result<(), UartError> {
         unimplemented!()
     }
@@ -276,7 +394,7 @@ impl<Instance:UartFeatures,State> Uart<Instance,State> {
     }
 }
 
-impl <Instance:UartFeatures> Uart<Instance,Synchronous> {
+impl <Instance: UartDevice> Uart<Instance,Synchronous> {
     pub fn transmit_sync(&mut self, data: &[u8]) -> Result<(), UartError> {
         unimplemented!()
     }

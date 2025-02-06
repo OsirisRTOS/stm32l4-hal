@@ -1,6 +1,6 @@
 ///This is the GPIO API for direct interaction with the GPIO Hardware controls. All Operations within this API are executed atomically. The same peripheral mus never be used by more than one instance
 
-use core::sync::atomic::{fence, AtomicU32, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 use core::marker::{Copy, PhantomData};
 use core::ops::{Add};
 
@@ -39,7 +39,7 @@ static TAKEN:[AtomicU8;18] = {
 /*==============STRUCTS========*/
 
 /// Available GPIO ports (A-I) on the microcontroller.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone,PartialEq)]
 pub enum Port {
     GPIOA = 0,
     GPIOB = 1,
@@ -53,7 +53,7 @@ pub enum Port {
 }
 
 /// Available GPIO pins (0-15) per Port
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone,PartialEq)]
 pub enum Pin {
     PIN0 = 0,
     PIN1 = 1,
@@ -132,11 +132,11 @@ pub enum AlternateFunction {
 }
 
 /// Available GPIO Modes
-struct Input;
-struct Output;
-struct Alternate;
-struct Analog;
-struct Undefined;
+pub(crate) struct Input;
+pub(crate) struct Output;
+pub(crate) struct Alternate;
+pub(crate) struct Analog;
+pub(crate) struct Undefined;
 
 /// A GPIO pin with ownership tracking.
 pub struct GPIOPin<Mode> {
@@ -377,7 +377,7 @@ impl GPIOPin<Alternate> {
 
 impl GPIOPin<Undefined> {
     ///Acquires the specified pin and prevents other parts from acquiring the same pin
-    pub fn take(port:Port,pin:Pin) -> GPIOPin<Undefined> {
+    pub fn take(port:Port,pin:Pin) -> Result<GPIOPin<Undefined>,()> {
         let idx = 2*port as usize;
         let idx = if (pin as usize) < 8 {
             idx
@@ -385,13 +385,26 @@ impl GPIOPin<Undefined> {
             idx+1
         };
         let bit = if (pin as usize) < 8 {
-            pin as usize
+            pin as u8
         } else {
-            pin as usize-8
+            pin as u8-8
         };
         let mask = 1<<bit;
-        let res = TAKEN[idx].fetch_or(mask, Ordering::AcqRel);
-        GPIOPin::<Undefined> { pin, port, _mode: PhantomData }
+        let res = TAKEN[idx].fetch_update(
+            Ordering::SeqCst,
+            Ordering::Relaxed,
+            |x| {
+                if x&mask {
+                    None
+                } else {
+                    Some(x|mask)
+                }
+            }
+        );
+        match res {
+            Ok(_) => {Ok(GPIOPin::<Undefined> { pin, port, _mode: PhantomData })}
+            Err(_) => {Err(())}
+        }
     }
 }
 
