@@ -2,17 +2,25 @@
 name = "hal"
 version = "0.1.0"
 edition = "2021"
+panic = "abort"
+rust-version = "1.82.0"
 
 [lib]
-crate-type = ["rlib", "staticlib"]
+crate-type = ["rlib"]
 
 [build-dependencies]
 cbindgen = "0.18.0"
 
 [dependencies]
-cortex-m = { path = "../../cortex-m", features = ["cm7-r0p1"] }
+cortex-m = { path = "../../ocortex-m", features = ["cm7-r0p1", "multi-core"] }
 
 [features]
 panic-semih = ["cortex-m/panic-semih"]
 panic-itm = ["cortex-m/panic-itm"]
 panic-exit = ["cortex-m/panic-exit"]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
