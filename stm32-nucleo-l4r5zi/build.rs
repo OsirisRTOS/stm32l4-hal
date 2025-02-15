@@ -6,11 +6,7 @@ fn main() {
     let mut config: cbindgen::Config = Default::default();
 
     config.no_includes = true;
-    config.includes = vec![
-        "stdint.h".to_string(),
-        "stdbool.h".to_string(),
-        "stdarg.h".to_string(),
-    ];
+    config.includes = vec!["stdint.h".to_string(), "stdbool.h".to_string(), "stdarg.h".to_string()];
 
     cbindgen::Builder::new()
         .with_config(config)

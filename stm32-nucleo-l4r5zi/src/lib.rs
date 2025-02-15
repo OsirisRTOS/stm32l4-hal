@@ -1,16 +1,16 @@
 #![no_std]
 
+pub mod gpio;
 pub mod macros;
 pub mod semih;
-pub mod gpio;
 
 pub extern crate cortex_m as common;
 
 use common::*;
 use core::ops::Add;
 
-const RCC_BASE:u32 = 0x40021000;
-const RCC_AHB2ENR_OFFSET:u32 =  0x4C;
+const RCC_BASE: u32 = 0x40021000;
+const RCC_AHB2ENR_OFFSET: u32 = 0x4C;
 
 #[no_mangle]
 pub extern "C" fn default_hndlr() {
@@ -20,10 +20,12 @@ pub extern "C" fn default_hndlr() {
 #[no_mangle]
 pub extern "C" fn hal_hw_init() {
     //enable GPIO peripheral clock
-    let ptr:*mut u32 = RCC_BASE.add(RCC_AHB2ENR_OFFSET) as *mut u32;
+    let ptr: *mut u32 = RCC_BASE.add(RCC_AHB2ENR_OFFSET) as *mut u32;
     //SAFETY:
     // This is a write to a known memory address which is a memory mapped register
-    unsafe { ptr.write_volatile(0x000001ff); }
+    unsafe {
+        ptr.write_volatile(0x000001ff);
+    }
 
     init_systick();
 }
