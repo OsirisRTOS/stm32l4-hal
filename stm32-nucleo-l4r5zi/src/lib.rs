@@ -8,6 +8,7 @@ pub extern crate cortex_m as common;
 
 use common::*;
 use core::ops::Add;
+use core::ffi::c_char;
 
 const RCC_BASE: u32 = 0x40021000;
 const RCC_AHB2ENR_OFFSET: u32 = 0x4C;
@@ -47,6 +48,6 @@ fn init_systick() {
  * Postconditions: none
  */
 #[no_mangle]
-pub extern "C" fn hal_semih_write_debug(msg: *const i8) {
+pub extern "C" fn hal_semih_write_debug(msg: *const c_char) {
     cortex_m::semih::hio::write_debug(unsafe { core::ffi::CStr::from_ptr(msg) });
 }

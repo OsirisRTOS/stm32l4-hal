@@ -9,6 +9,6 @@ void default_hndlr(void);
 
 void hal_hw_init(void);
 
-void hal_semih_write_debug(const int8_t *msg);
+void hal_semih_write_debug(const char *msg);
 
 #endif /* HAL_H */
