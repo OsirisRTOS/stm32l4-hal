@@ -20,7 +20,7 @@ fn main() {
             bindings.write_to_file("include/hal/lib.h");
         }
         Err(e) => {
-            eprintln!("Error generating bindings: {}", e);
+            panic!("Error generating bindings: {}", e);
         }
     }
 }
