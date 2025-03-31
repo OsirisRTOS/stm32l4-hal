@@ -16,11 +16,8 @@ fn main() {
         .generate();
 
     match bindings {
-        Ok(bindings) => {
-            bindings.write_to_file("include/hal/lib.h");
-        }
-        Err(e) => {
-            panic!("Error generating bindings: {}", e);
-        }
-    }
+        Ok(bindings) => bindings.write_to_file("include/hal/lib.h"),
+        Err(cbindgen::Error::ParseSyntaxError { .. }) => return, // ignore in favor of cargo's syntax check
+        Err(err) => panic!("{:?}", err),
+    };
 }
