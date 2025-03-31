@@ -21,8 +21,8 @@ pub extern "C" fn default_hndlr() {
 pub extern "C" fn hal_hw_init() {
     //enable GPIO peripheral clock
     let ptr:*mut u32 = RCC_BASE.add(RCC_AHB2ENR_OFFSET) as *mut u32;
-    ///SAFETY:
-    /// This is a write to a known memory address which is a memory mapped register
+    //SAFETY
+    //This is a write to a known memory address which is a memory mapped register
     unsafe { ptr.write_volatile(0x000001ff); }
 }
 

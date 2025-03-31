@@ -1,12 +1,19 @@
 use core::cmp::PartialEq;
 use core::marker::PhantomData;
 use core::ops::Add;
-use crate::gpio::{Alternate, AlternateFunction, GPIOPin, IntoAlternate, Pin, Port, Undefined};
+use crate::gpio::{Alternate, AlternateFunction, GPIOPin, IntoAlternate, Pin, Port};
 use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 
 
 const RCC_BASE:u32 = 0x4002_1000;
+const USART1_BASE:u32 = 0x4001_3800;
+const USART2_BASE:u32 = 0x4000_4400;
+const USART3_BASE:u32 = 0x4000_4800 ;
+const USART4_BASE:u32 = 0x4000_4C00 ;
+const USART5_BASE:u32 = 0x4000_5000;
+const LPUART1_BASE:u32 = 4000_8000;
 const APB2ENR_OFFSET:u32 = 0x60;
+const CR1_OFFSET:u32 = 0x00;
 
 // Combined state enum - sealed to prevent external implementations
 mod sealed {
@@ -47,6 +54,7 @@ pub trait UartDevice {
     fn lock() -> Result<u8,u8>;
     fn unlock();
     fn enable_clock();
+    fn set_config(config: &Config);
 }
 
 // Define specific UART instances
@@ -196,8 +204,8 @@ pub enum ClockPhase {
 }
 
 pub struct Uart<Instance: UartDevice, S: State> {
-    tx: GPIOPin<AlternateFunction>,
-    rx: Option<GPIOPin<AlternateFunction>>,
+    tx: GPIOPin<Alternate>,
+    rx: Option<GPIOPin<Alternate>>,
     _instance: PhantomData<Instance>,
     _state: PhantomData<S>,
 }
@@ -239,12 +247,9 @@ impl<Instance: UartDevice> Uart<Instance, Disabled> {
         };
         let mut tx = match tx.into_alternate() {
             Ok(pin) => {pin}
-            Err(pin) => {
-                pin.release();
-                return Err(UartError::PinConfigError);
-            }
+            Err(_) => return Err(UartError::PinConfigError)
         };
-        let rx = match rx_port.is_some() {
+        let mut rx = match rx_port.is_some() {
             true => {
                 let rx = match GPIOPin::take(tx_port, tx_pin) {
                     Ok(rx) => rx,
@@ -252,40 +257,41 @@ impl<Instance: UartDevice> Uart<Instance, Disabled> {
                 };
                 Some(match rx.into_alternate() {
                     Ok(pin) => {pin}
-                    Err(pin) => {
-                        pin.release();
-                        tx.release();
-                        return Err(UartError::PinConfigError);
-                    }
+                    Err(pin) => return Err(UartError::PinConfigError)
                 })
             }
             false => {None}
         };
         let tx_fn = Instance::get_tx_fn(tx_port, tx_pin)?;
-        let rx_fn = match rx.is_some() {
-            true => {Some(Instance::get_rx_fn(rx_port.unwrap(), rx_pin)?)}
-            false => {None}
-        };
-        if Instance::lock().is_err() {
-            tx.release();
-            if (rx.is_some() { rx.unwrap().release();}
-            return Err(UartError::DeviceUnavailable);
-        }
         tx.set_alternate_function(tx_fn);
-        if let Some(mut rx) = rx {
-            rx.set_alternate_function(rx_fn.unwrap());
+        if let Some(ref mut rx) = rx {
+            let rx_fn = Instance::get_rx_fn(rx_port.unwrap(), rx_pin.unwrap())?;
+            rx.set_alternate_function(rx_fn);
         }
         Instance::enable_clock();
-        unimplemented!();
+        Instance::set_config(&config);
+        if Instance::lock().is_err() {
+            return Err(UartError::DeviceUnavailable);
+        }
+        Ok(Uart {
+            tx,
+            rx,
+            _instance: Default::default(),
+            _state: Default::default(),
+        })
     }
 
     pub fn enable_async(self) -> Result<Uart<Instance, Asynchronous>, UartError> {
         unimplemented!()
     }
 
-    pub fn enable_sync<Instance: SupportsSync>(
+
+}
+
+impl<Instance: UartDevice+SupportsSync> Uart<Instance, Disabled> {
+    pub fn enable_sync(
         self,
-        sync_config: SyncConfig
+        _sync_config: SyncConfig
     ) -> Result<Uart<Instance, Synchronous>, UartError>
     {
         unimplemented!()
@@ -320,7 +326,7 @@ impl UartDevice for Uart1 {
             Ordering::SeqCst,
             Ordering::Relaxed,
             |x| {
-                if x&mask {
+                if x&mask!=0 {
                     None
                 } else {
                     Some(x|mask)
@@ -331,7 +337,7 @@ impl UartDevice for Uart1 {
 
     fn unlock() {
         let mask = 0xFE;
-        let res = TAKEN.fetch_update(
+        let _res = TAKEN.fetch_update(
             Ordering::SeqCst,
             Ordering::Relaxed,
             |x| {
@@ -343,30 +349,56 @@ impl UartDevice for Uart1 {
     fn enable_clock() {
         let mask = 0b0000_0000_0000_0000_0100_0000_0000_0000;
         let ptr:*mut u32 = RCC_BASE.add(APB2ENR_OFFSET) as *mut u32;
-        ///SAFETY:
-        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        //SAFETY
+        // The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
-        ///SAFETY
-        /// This Result is only error if the closure returns None, which can't happen
+        //SAFETY
+        //This Result is only error if the closure returns None, which can't happen
         atomic.fetch_or(mask, Ordering::SeqCst);
+    }
+    fn set_config(config: &Config) {
+        //CR1 writes
+        let parity = match config.parity {
+            Parity::None => {0x0000_0000}
+            Parity::Even => {0x0000_0400}
+            Parity::Odd => {0x0000_0600}
+        };
+        let paritymask = 0xFFFF_F9FF;
+        let databits = match config.word_length {
+            DataBits::Seven => {0x1000_0000}
+            DataBits::Eight => {0x0000_0000}
+            DataBits::Nine => {0x0000_1000}
+        };
+        let databitmask = 0xEFFF_EFFF;
+        let writemask = databitmask&paritymask;
+        let writedata = parity | databits;
+        let ptr:*mut u32 = USART1_BASE.add(CR1_OFFSET) as *mut u32;
+        let atomic = unsafe { AtomicU32::from_ptr(ptr) };
+        atomic.fetch_update(Ordering::SeqCst,Ordering::SeqCst,|x|Some((x&writemask)|writedata)).expect("No none value");
+        let _stop = match config.stop_bits {
+            StopBits::Half => {}
+            StopBits::One => {}
+            StopBits::OneAndHalf => {}
+            StopBits::Two => {}
+        };
     }
 }
 
-impl<Instance: UartDevice,State> Uart<Instance,State> {
-    pub fn transmit(&mut self, data: &[u8]) -> Result<(), UartError> {
+impl<Instance: UartDevice,StateParam:State> Uart<Instance,StateParam> {
+    pub fn transmit(&mut self, _data: &[u8]) -> Result<(), UartError> {
         unimplemented!()
     }
 
-    pub fn receive(&mut self, buffer: &mut [u8]) -> Result<(), UartError> {
+    pub fn receive(&mut self, _buffer: &mut [u8]) -> Result<(), UartError> {
         unimplemented!()
     }
 
     // Non-blocking variants
-    pub fn transmit_nonblocking(&mut self, data: &[u8]) -> Result<(), UartError> {
+    pub fn transmit_nonblocking(&mut self, _data: &[u8]) -> Result<(), UartError> {
         unimplemented!()
     }
 
-    pub fn receive_nonblocking(&mut self, buffer: &mut [u8]) -> Result<(), UartError> {
+    pub fn receive_nonblocking(&mut self, _buffer: &mut [u8]) -> Result<(), UartError> {
         unimplemented!()
     }
 
@@ -380,11 +412,11 @@ impl<Instance: UartDevice,State> Uart<Instance,State> {
     }
 
     // FIFO control (if supported)
-    pub fn set_tx_fifo_threshold(&mut self, threshold: FifoThreshold) -> Result<(), UartError> {
+    pub fn set_tx_fifo_threshold(&mut self, _threshold: FifoThreshold) -> Result<(), UartError> {
         unimplemented!()
     }
 
-    pub fn set_rx_fifo_threshold(&mut self, threshold: FifoThreshold) -> Result<(), UartError> {
+    pub fn set_rx_fifo_threshold(&mut self, _threshold: FifoThreshold) -> Result<(), UartError> {
         unimplemented!()
     }
 
@@ -395,24 +427,24 @@ impl<Instance: UartDevice,State> Uart<Instance,State> {
 }
 
 impl <Instance: UartDevice> Uart<Instance,Synchronous> {
-    pub fn transmit_sync(&mut self, data: &[u8]) -> Result<(), UartError> {
+    pub fn transmit_sync(&mut self, _data: &[u8]) -> Result<(), UartError> {
         unimplemented!()
     }
 
-    pub fn receive_sync(&mut self, buffer: &mut [u8]) -> Result<(), UartError> {
+    pub fn receive_sync(&mut self, _buffer: &mut [u8]) -> Result<(), UartError> {
         unimplemented!()
     }
 
     // Clock configuration
-    pub fn set_clock_polarity(&mut self, polarity: ClockPolarity) -> Result<(), UartError> {
+    pub fn set_clock_polarity(&mut self, _polarity: ClockPolarity) -> Result<(), UartError> {
         unimplemented!()
     }
 
-    pub fn set_clock_phase(&mut self, phase: ClockPhase) -> Result<(), UartError> {
+    pub fn set_clock_phase(&mut self, _phase: ClockPhase) -> Result<(), UartError> {
         unimplemented!()
     }
 
-    pub fn set_last_bit_clock_pulse(&mut self, enabled: bool) -> Result<(), UartError> {
+    pub fn set_last_bit_clock_pulse(&mut self, _enabled: bool) -> Result<(), UartError> {
         unimplemented!()
     }
 }

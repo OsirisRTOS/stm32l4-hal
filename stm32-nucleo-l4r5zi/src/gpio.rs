@@ -211,9 +211,9 @@ impl <Mode> GPIOPin<Mode> {
             Port::GPIOI => { GPIOI_BASE }
         }
     }
-
-    ///Releases the GPIO peripheral
-    pub fn release(self) {
+}
+impl<Mode> Drop for GPIOPin<Mode> {
+    fn drop(&mut self) {
         let idx = 2 * self.port as usize;
         let idx = if (self.pin as usize) < 8 {
             idx
@@ -238,8 +238,8 @@ impl <Mode: Configured> GPIOPin<Mode> {
         let target = 1<<self.pin as usize;
         let base_address = self.get_base_address().add(OTYPER_OFFSET);
         let ptr: *mut u32 = base_address as *mut u32;
-        ///SAFETY:
-        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        //SAFETY
+        //The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
         match r#type {
             OutputType::PushPull => {
@@ -263,11 +263,11 @@ impl <Mode: Configured> GPIOPin<Mode> {
         };
         let base_address = self.get_base_address().add(OSPEEDR_OFFSET);
         let ptr: *mut u32 = base_address as *mut u32;
-        ///SAFETY:
-        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        //SAFETY:
+        //The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
-        ///SAFETY
-        /// This Result is only error if the closure returns None, which can't happen
+        //SAFETY
+        //This Result is only error if the closure returns None, which can't happen
         atomic.fetch_update(Ordering::AcqRel, Ordering::Relaxed, |value| {
             let cleared = value & !target;
             Some(cleared | (target&speedpattern))
@@ -284,11 +284,11 @@ impl <Mode: Configured> GPIOPin<Mode> {
         };
         let base_address = self.get_base_address().add(PUPDR_OFFSET);
         let ptr: *mut u32 = base_address as *mut u32;
-        ///SAFETY:
-        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        //SAFETY:
+        //The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
-        ///SAFETY
-        /// This Result is only error if the closure returns None, which can't happen
+        //SAFETY
+        //This Result is only error if the closure returns None, which can't happen
         atomic.fetch_update(Ordering::AcqRel, Ordering::Relaxed, |value| {
             let cleared = value & !target;
             Some(cleared | (target&speedpattern))
@@ -300,8 +300,8 @@ impl <Mode: Configured> GPIOPin<Mode> {
         let base_address = self.get_base_address().add(BSRR_OFFSET);
         let ptr: *mut u32 = base_address as *mut u32;
         let target = 1 << self.pin as usize;
-        ///SAFETY:
-        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        //SAFETY:
+        //The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         unsafe { ptr.write(target); }
     }
 
@@ -310,8 +310,8 @@ impl <Mode: Configured> GPIOPin<Mode> {
         let base_address = self.get_base_address().add(BSRR_OFFSET);
         let ptr: *mut u32 = base_address as *mut u32;
         let target = 1 << (self.pin as usize +16);
-        ///SAFETY:
-        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        //SAFETY:
+        //The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         unsafe { ptr.write_volatile(target); }
     }
 
@@ -319,8 +319,8 @@ impl <Mode: Configured> GPIOPin<Mode> {
         let base_address = self.get_base_address().add(IDR_OFFSET);
         let ptr: *mut u32 = base_address as *mut u32;
         let target = 1 << (self.pin as usize +16);
-        ///SAFETY:
-        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        //SAFETY:
+        //The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let idr:u32 = unsafe { ptr.read_volatile() };
         if (idr&target)==0 {
             false
@@ -363,11 +363,11 @@ impl GPIOPin<Alternate> {
             self.get_base_address().add(AFRL_OFFSET)
         };
         let ptr: *mut u32 = base_address as *mut u32;
-        ///SAFETY:
-        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        //SAFETY
+        //The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
-        ///SAFETY
-        /// This Result is only error if the closure returns None, which can't happen
+        //SAFETY
+        //This Result is only error if the closure returns None, which can't happen
         atomic.fetch_update(Ordering::AcqRel, Ordering::Relaxed, |value| {
             let cleared = value & !target;
             Some(cleared | (target & speedpattern))
@@ -394,7 +394,7 @@ impl GPIOPin<Undefined> {
             Ordering::SeqCst,
             Ordering::Relaxed,
             |x| {
-                if x&mask {
+                if x&mask!=0 {
                     None
                 } else {
                     Some(x|mask)
@@ -410,12 +410,12 @@ impl GPIOPin<Undefined> {
 
 
 impl <Mode: InputConvertible> IntoInput<GPIOPin<Input>, GPIOPin<Mode>> for GPIOPin<Mode> {
-    ///Set a pin to Input Mode
+    //Set a pin to Input Mode
     fn into_input(self) -> Result<GPIOPin<Input>,GPIOPin<Mode>> {
         let base_address = self.get_base_address();
         let ptr: *mut u32 = base_address as *mut u32;
-        ///SAFETY:
-        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        //SAFETY:
+        //The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
         let target = 0b11<<2*self.pin as u32;
         let res = atomic.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |value| {
@@ -433,12 +433,12 @@ impl <Mode: InputConvertible> IntoInput<GPIOPin<Input>, GPIOPin<Mode>> for GPIOP
 }
 
 impl <Mode: OutputConvertible> IntoOutput<GPIOPin<Output>,GPIOPin<Mode>> for GPIOPin<Mode> {
-    ///Set a pin to Output Mode
+    //Set a pin to Output Mode
     fn into_output(self) -> Result<GPIOPin<Output>,GPIOPin<Mode>> {
         let base_address = self.get_base_address();
         let ptr: *mut u32 = base_address as *mut u32;
-        ///SAFETY:
-        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        //SAFETY
+        //The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
         let target = 0b11<<(2*self.pin as u32);
         let modepattern = 0b0101_0101_0101_0101_0101_0101_0101_0101;
@@ -462,8 +462,8 @@ impl <Mode: AnalogConvertible> IntoAnalog<GPIOPin<Analog>,GPIOPin<Mode>> for GPI
     fn into_analog(self) -> Result<GPIOPin<Analog>, GPIOPin<Mode>> {
         let base_address = self.get_base_address();
         let ptr: *mut u32 = base_address as *mut u32;
-        ///SAFETY:
-        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        //SAFETY:
+        //The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
         let target = 0b11<<2*self.pin as u32;
         let modepattern = 0b1111_1111_1111_1111_1111_1111_1111_1111;
@@ -488,8 +488,8 @@ impl <Mode: AlternateConvertible> IntoAlternate<GPIOPin<Alternate>,GPIOPin<Mode>
     fn into_alternate(self) -> Result<GPIOPin<Alternate>, GPIOPin<Mode>> {
         let base_address = self.get_base_address();
         let ptr: *mut u32 = base_address as *mut u32;
-        ///SAFETY:
-        /// The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
+        //SAFETY:
+        //The Base Address is on of 9 possible base addresses that are memory mapped registers and therefor guaranteed to be valid
         let atomic: &AtomicU32 = unsafe { AtomicU32::from_ptr(ptr) };
         let target = 0b11<<2*self.pin as u32;
         let modepattern = 0b1010_1010_1010_1010_1010_1010_1010_1010;
